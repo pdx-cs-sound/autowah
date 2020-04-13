@@ -49,19 +49,19 @@ parser.add_argument(
     "--rate",
     help="Wah rate in wahs per second.",
     type=float,
-    default=0.3,
+    default=0.2,
 )
 parser.add_argument(
     "--depth",
     help="Wah minimum unit frequency (must be > 0).",
     type=float,
-    default=0.05,
+    default=0.02,
 )
 parser.add_argument(
     "--height",
     help="Wah maximum unit frequency (must be > depth, < 1).",
     type=float,
-    default=0.3,
+    default=0.9,
 )
 parser.add_argument(
     "infile",
@@ -79,11 +79,14 @@ info, channels = read_wave(args.infile)
 
 blocksize = info.framerate // 100
 window = signal.windows.hann(blocksize)
-ncountour = int(wah_rate * info.framerate / blocksize)
+ncontour = int(wah_rate * info.framerate / blocksize)
 scale = args.height - args.depth
-cspace = np.linspace(0, np.pi, ncountour)
-countour = scale * np.log2(2 - np.sin(cspace)) + args.depth
-icountour = 0
+cspace = np.linspace(0, np.pi, ncontour)
+contour = scale * np.log2(2 - np.sin(cspace)) + args.depth
+fws = [ signal.firwin(128, c, window=('kaiser', 0.5))
+        for c in contour ]
+
+icontour = 0
 waheds = []
 for channel in channels:
     wahed = np.zeros(info.nframes)
@@ -91,9 +94,8 @@ for channel in channels:
     while start < info.nframes:
         end = min(start + blocksize, info.nframes)
         block = channel[start:end]
-        fw = signal.firwin(128, countour[icountour], window=('kaiser', 0.5))
-        icountour = (icountour + 1) % ncountour
-        block = signal.convolve(block, fw, mode='same')
+        icontour = (icontour + 1) % ncontour
+        block = signal.convolve(block, fws[icontour], mode='same')
         invlap = 1.0 / lap
         for i in range(start, end):
             wahed[i] +=  invlap * block[i - start] * window[i - start]
