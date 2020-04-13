@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import argparse
 import numpy as np
 from scipy import signal
 import sys, wave
@@ -42,17 +43,46 @@ def write_wave(filename, info, channels):
     w.writeframes(hsamples)
     w.close()
 
-wah_rate = 1.0 / float(sys.argv[1])
-in_filename = sys.argv[2]
-out_filename = sys.argv[3]
+# Parse arguments.
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--rate",
+    help="Wah rate in wahs per second.",
+    type=float,
+    default=0.3,
+)
+parser.add_argument(
+    "--depth",
+    help="Wah minimum unit frequency (must be > 0).",
+    type=float,
+    default=0.05,
+)
+parser.add_argument(
+    "--height",
+    help="Wah maximum unit frequency (must be > depth, < 1).",
+    type=float,
+    default=0.3,
+)
+parser.add_argument(
+    "infile",
+    help="Input wave filename.",
+)
+parser.add_argument(
+    "outfile",
+    help="Output wave filename.",
+)
+args = parser.parse_args()
 
-info, channels = read_wave(in_filename)
+lap = 4
+wah_rate = lap / args.rate
+info, channels = read_wave(args.infile)
 
 blocksize = info.framerate // 100
 window = signal.windows.hann(blocksize)
 ncountour = int(wah_rate * info.framerate / blocksize)
-countour = 0.3 * np.log2(2 - np.sin(np.linspace(0, np.pi, ncountour))) + 0.01
-print(countour)
+scale = args.height - args.depth
+cspace = np.linspace(0, np.pi, ncountour)
+countour = scale * np.log2(2 - np.sin(cspace)) + args.depth
 icountour = 0
 waheds = []
 for channel in channels:
@@ -64,9 +94,10 @@ for channel in channels:
         fw = signal.firwin(128, countour[icountour], window=('kaiser', 0.5))
         icountour = (icountour + 1) % ncountour
         block = signal.convolve(block, fw, mode='same')
+        invlap = 1.0 / lap
         for i in range(start, end):
-            wahed[i] += 0.25 * block[i - start] * window[i - start]
-        start += blocksize // 4
+            wahed[i] +=  invlap * block[i - start] * window[i - start]
+        start += blocksize // lap
     waheds.append(wahed)
 
-write_wave(out_filename, info, np.array(waheds))
+write_wave(args.outfile, info, np.array(waheds))
